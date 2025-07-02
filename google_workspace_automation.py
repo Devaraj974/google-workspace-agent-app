@@ -11,6 +11,7 @@ import google.generativeai as genai
 from langgraph.graph import StateGraph, END
 from typing import TypedDict
 from google.oauth2 import service_account
+import smtplib
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
@@ -145,28 +146,38 @@ def summarize_node(state: AgentState):
     state['summary'] = summary
     return state
 
-def email_node(state: AgentState):
-    summary = state.get('summary', '')
-    recipient = state.get('recipient_email', '')
-    creds = get_credentials()
-    gmail_service = build('gmail', 'v1', credentials=creds)
+def send_email_smtp(subject, body, to_email, smtp_server, smtp_port, smtp_user, smtp_password):
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = smtp_user
+    msg['To'] = to_email
     try:
-        message = MIMEText(summary)
-        message['to'] = recipient
-        message['from'] = 'me'
-        message['subject'] = 'Automated Google Workspace Summary'
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        body = {'raw': raw_message}
-        gmail_service.users().messages().send(userId='me', body=body).execute()
-        state['email_status'] = f"Gmail email sent successfully to {recipient}!"
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(smtp_user, [to_email], msg.as_string())
+        return f"Email sent successfully to {to_email}!"
     except Exception as e:
-        state['email_status'] = f"Error sending Gmail: {e}"
-    return state
+        return f"Error sending email: {e}"
 
 # --- Streamlit UI ---
 file_type = st.selectbox("Select the file type to summarize:", ["Doc", "Sheet", "Slides"])
 link = st.text_input(f"Paste the Google {file_type} link here:")
 recipient_email = st.text_input("Enter the recipient email address:")
+
+st.markdown("---")
+use_custom_smtp = st.checkbox("Advanced: Use your own SMTP credentials")
+
+if use_custom_smtp:
+    smtp_server = st.text_input("SMTP server", value="smtp.gmail.com")
+    smtp_port = st.number_input("SMTP port", value=587)
+    smtp_user = st.text_input("SMTP username (your email)")
+    smtp_password = st.text_input("SMTP password or app password", type="password")
+else:
+    smtp_server = st.secrets.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(st.secrets.get("SMTP_PORT", 587))
+    smtp_user = st.secrets.get("SMTP_USER", "")
+    smtp_password = st.secrets.get("SMTP_PASSWORD", "")
 
 # Helper to extract ID from link
 def extract_id_from_link(link):
@@ -184,6 +195,8 @@ if st.button("Summarize and Email (Agent)"):
         st.error("Please paste a valid Google link.")
     elif not recipient_email:
         st.error("Please enter a recipient email address.")
+    elif use_custom_smtp and (not smtp_user or not smtp_password):
+        st.error("Please enter your SMTP username and password.")
     else:
         file_id = extract_id_from_link(link)
         if not file_id:
@@ -193,6 +206,22 @@ if st.button("Summarize and Email (Agent)"):
             graph = StateGraph(AgentState)
             graph.add_node('fetch', fetch_content_node)
             graph.add_node('summarize', summarize_node)
+            def email_node(state: AgentState):
+                summary = state.get('summary', '')
+                recipient = state.get('recipient_email', '')
+                subject = 'Automated Google Workspace Summary'
+                # Use SMTP credentials from UI or secrets
+                status = send_email_smtp(
+                    subject,
+                    summary,
+                    recipient,
+                    smtp_server,
+                    smtp_port,
+                    smtp_user,
+                    smtp_password
+                )
+                state['email_status'] = status
+                return state
             graph.add_node('email', email_node)
             graph.add_edge('fetch', 'summarize')
             graph.add_edge('summarize', 'email')
