@@ -1,7 +1,6 @@
-
-python-dotenv
-langchain-google-genai
-google-api-python-client
-google-auth-httplib2
+streamlit
+google-auth
 google-auth-oauthlib
+google-api-python-client
+google-generativeai
 langgraph 
