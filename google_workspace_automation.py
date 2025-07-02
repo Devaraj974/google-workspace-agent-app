@@ -111,6 +111,7 @@ class AgentState(TypedDict):
     extracted_text: str
     summary: str
     email_status: str
+    recipient_email: str
 
 # --- LangGraph Nodes ---
 def fetch_content_node(state: AgentState):
@@ -146,17 +147,18 @@ def summarize_node(state: AgentState):
 
 def email_node(state: AgentState):
     summary = state.get('summary', '')
+    recipient = state.get('recipient_email', '')
     creds = get_credentials()
     gmail_service = build('gmail', 'v1', credentials=creds)
     try:
         message = MIMEText(summary)
-        message['to'] = TARGET_EMAIL
+        message['to'] = recipient
         message['from'] = 'me'
         message['subject'] = 'Automated Google Workspace Summary'
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
         body = {'raw': raw_message}
         gmail_service.users().messages().send(userId='me', body=body).execute()
-        state['email_status'] = "Gmail email sent successfully!"
+        state['email_status'] = f"Gmail email sent successfully to {recipient}!"
     except Exception as e:
         state['email_status'] = f"Error sending Gmail: {e}"
     return state
@@ -164,6 +166,7 @@ def email_node(state: AgentState):
 # --- Streamlit UI ---
 file_type = st.selectbox("Select the file type to summarize:", ["Doc", "Sheet", "Slides"])
 link = st.text_input(f"Paste the Google {file_type} link here:")
+recipient_email = st.text_input("Enter the recipient email address:")
 
 # Helper to extract ID from link
 def extract_id_from_link(link):
@@ -179,6 +182,8 @@ def extract_id_from_link(link):
 if st.button("Summarize and Email (Agent)"):
     if not link:
         st.error("Please paste a valid Google link.")
+    elif not recipient_email:
+        st.error("Please enter a recipient email address.")
     else:
         file_id = extract_id_from_link(link)
         if not file_id:
@@ -200,7 +205,8 @@ if st.button("Summarize and Email (Agent)"):
                 "file_id": file_id,
                 "extracted_text": "",
                 "summary": "",
-                "email_status": ""
+                "email_status": "",
+                "recipient_email": recipient_email
             })
             st.subheader("Summary:")
             st.write(result.get('summary', ''))
