@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 import google.generativeai as genai
 from langgraph.graph import StateGraph, END
 from typing import TypedDict
+from google.oauth2 import service_account
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
@@ -46,20 +47,17 @@ with open(CREDENTIALS_PATH, "w") as f:
 
 # --- Google Auth ---
 def get_credentials():
-    creds = None
-    token_path = "token.pickle"
-    if os.path.exists(token_path):
-        with open(token_path, 'rb') as token:
-            creds = pickle.load(token)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, 'wb') as token:
-            pickle.dump(creds, token)
-    return creds
+    credentials = service_account.Credentials.from_service_account_file(
+        "credentials.json",
+        scopes=[
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/gmail.send',
+            'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'https://www.googleapis.com/auth/presentations.readonly',
+            'https://www.googleapis.com/auth/documents.readonly'
+        ]
+    )
+    return credentials
 
 # --- Extraction Functions ---
 def extract_doc_text(docs_service, doc_id):
