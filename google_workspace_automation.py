@@ -3,7 +3,6 @@ import pickle
 import base64
 from email.mime.text import MIMEText
 import streamlit as st
-from dotenv import load_dotenv  # Optional, but not used for secrets now
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -242,4 +241,9 @@ if st.button("Summarize and Email (Agent)"):
             if "successfully" in result.get('email_status', '').lower():
                 st.success(result.get('email_status', ''))
             else:
-                st.error(result.get('email_status', '')) 
+                st.error(result.get('email_status', ''))
+
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = "587"
+SMTP_USER = "devarajhansi974@gmail.com"
+SMTP_PASSWORD = "pzfgdepfsvtdbfyx" 
