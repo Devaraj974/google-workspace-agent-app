@@ -12,6 +12,7 @@ from typing import TypedDict
 from google.oauth2 import service_account
 import smtplib
 from dotenv import load_dotenv
+import re
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
@@ -170,7 +171,7 @@ def send_email_smtp(subject, body, to_email, smtp_server, smtp_port, smtp_user, 
         return f"Error sending email: {e}"
 
 # --- Streamlit UI ---
-file_type = st.selectbox("Select the file type to summarize:", ["Doc", "Sheet", "Slides"])
+file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive"])
 link = st.text_input(f"Paste the Google {file_type} link here:")
 recipient_email = st.text_input("Enter the recipient email address:")
 
@@ -190,14 +191,44 @@ else:
 
 # Helper to extract ID from link
 def extract_id_from_link(link):
+    # Handles /d/<id>, id=<id>, and /folders/<id> patterns
+    patterns = [
+        r"/d/([\w-]+)",
+        r"id=([\w-]+)",
+        r"/folders/([\w-]+)"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, link)
+        if match:
+            return match.group(1)
+    return ""
+
+def list_drive_folder_files(drive_service, folder_id):
     try:
-        parts = link.split("/d/")
-        if len(parts) > 1:
-            return parts[1].split("/")[0]
+        results = drive_service.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="files(id, name, mimeType)"
+        ).execute()
+        return results.get('files', [])
+    except Exception as e:
+        return f"Error listing files: {e}"
+
+if file_type == "Drive" and link:
+    folder_id = extract_id_from_link(link)
+    if not folder_id:
+        st.error("Could not extract folder ID from the link. Please check the link format.")
+    else:
+        creds = get_credentials()
+        drive_service = build('drive', 'v3', credentials=creds)
+        files = list_drive_folder_files(drive_service, folder_id)
+        if isinstance(files, str):
+            st.error(files)
+        elif not files:
+            st.info("No files found in this folder or you do not have access.")
         else:
-            return ""
-    except Exception:
-        return ""
+            st.subheader("Files in Drive Folder:")
+            for f in files:
+                st.write(f"- {f['name']} ({f['mimeType']})")
 
 if st.button("Summarize and Email (Agent)"):
     if not link:
@@ -256,4 +287,4 @@ if st.button("Summarize and Email (Agent)"):
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = "587"
 SMTP_USER = "devarajhansi974@gmail.com"
-SMTP_PASSWORD = "pzfgdepfsvtdbfyx" 
+SMTP_PASSWORD = "pzfgdepfsvtdbfyx"
