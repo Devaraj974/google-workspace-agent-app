@@ -13,6 +13,9 @@ from google.oauth2 import service_account
 import smtplib
 from dotenv import load_dotenv
 import re
+import io
+from googleapiclient.http import MediaIoBaseDownload
+import PyPDF2
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
@@ -115,6 +118,23 @@ def extract_presentation_text(slides_service, presentation_id):
     except Exception as e:
         return f"Error reading Google Slides: {e}"
 
+def extract_pdf_text(drive_service, file_id):
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        reader = PyPDF2.PdfReader(fh)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text
+    except Exception as e:
+        return f"Error reading PDF: {e}"
+
 # --- LangGraph State Schema ---
 class AgentState(TypedDict):
     file_type: str
@@ -139,6 +159,9 @@ def fetch_content_node(state: AgentState):
     elif file_type == "Slides":
         slides_service = build('slides', 'v1', credentials=creds)
         text = extract_presentation_text(slides_service, file_id)
+    elif file_type == "PDF":
+        drive_service = build('drive', 'v3', credentials=creds)
+        text = extract_pdf_text(drive_service, file_id)
     state['extracted_text'] = text
     return state
 
@@ -171,7 +194,7 @@ def send_email_smtp(subject, body, to_email, smtp_server, smtp_port, smtp_user, 
         return f"Error sending email: {e}"
 
 # --- Streamlit UI ---
-file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive"])
+file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive", "PDF"])
 link = st.text_input(f"Paste the Google {file_type} link here:")
 recipient_email = st.text_input("Enter the recipient email address:")
 
@@ -233,7 +256,8 @@ if file_type == "Drive" and link:
         supported_types = [
             "application/vnd.google-apps.document",
             "application/vnd.google-apps.spreadsheet",
-            "application/vnd.google-apps.presentation"
+            "application/vnd.google-apps.presentation",
+            "application/pdf"
         ]
         if not files:
             st.info("No files found in this folder or you do not have access.")
@@ -262,6 +286,9 @@ if file_type == "Drive" and link:
                     slides_service = build('slides', 'v1', credentials=creds)
                     text = extract_presentation_text(slides_service, file_id)
                     summary = summarize_node({'file_type': 'Slides', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+                elif mime_type == "application/pdf":
+                    text = extract_pdf_text(drive_service, file_id)
+                    summary = summarize_node({'file_type': 'PDF', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
                 summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type, "path": file_path}
             # File selection UI
             with col1:
@@ -271,7 +298,7 @@ if file_type == "Drive" and link:
                     file_labels = [summaries[x]["path"] for x in file_ids]
                     selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["path"])
                 else:
-                    st.info("No supported files (Docs, Sheets, Slides) found in this folder or subfolders.")
+                    st.info("No supported files (Docs, Sheets, Slides, PDF) found in this folder or subfolders.")
                     selected_file_id = None
             with col2:
                 st.markdown("### File Summary")
