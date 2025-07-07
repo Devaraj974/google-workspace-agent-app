@@ -203,15 +203,23 @@ def extract_id_from_link(link):
             return match.group(1)
     return ""
 
-def list_drive_folder_files(drive_service, folder_id):
+def list_drive_files_recursive(drive_service, folder_id, parent_path=""):
+    files = []
     try:
         results = drive_service.files().list(
             q=f"'{folder_id}' in parents and trashed = false",
             fields="files(id, name, mimeType)"
         ).execute()
-        return results.get('files', [])
+        for f in results.get('files', []):
+            file_path = f"{parent_path}/{f['name']}" if parent_path else f["name"]
+            if f['mimeType'] == 'application/vnd.google-apps.folder':
+                # Recurse into subfolder
+                files.extend(list_drive_files_recursive(drive_service, f['id'], file_path))
+            else:
+                files.append({"id": f["id"], "name": f["name"], "mimeType": f["mimeType"], "path": file_path})
     except Exception as e:
-        return f"Error listing files: {e}"
+        st.error(f"Error listing files: {e}")
+    return files
 
 if file_type == "Drive" and link:
     folder_id = extract_id_from_link(link)
@@ -220,20 +228,26 @@ if file_type == "Drive" and link:
     else:
         creds = get_credentials()
         drive_service = build('drive', 'v3', credentials=creds)
-        files = list_drive_folder_files(drive_service, folder_id)
-        if isinstance(files, str):
-            st.error(files)
-        elif not files:
+        files = list_drive_files_recursive(drive_service, folder_id)
+        # Only keep supported types for summarization
+        supported_types = [
+            "application/vnd.google-apps.document",
+            "application/vnd.google-apps.spreadsheet",
+            "application/vnd.google-apps.presentation"
+        ]
+        if not files:
             st.info("No files found in this folder or you do not have access.")
         else:
-            st.markdown("## Google Drive Folder Browser")
+            st.markdown("## Google Drive Folder Browser (Recursive)")
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
-            # Prepare summaries for all files
+            # Prepare summaries for all supported files
             summaries = {}
-            for f in files:
+            filtered_files = [f for f in files if f["mimeType"] in supported_types]
+            for f in filtered_files:
                 file_id = f['id']
                 file_name = f['name']
+                file_path = f['path']
                 mime_type = f['mimeType']
                 summary = None
                 if mime_type == "application/vnd.google-apps.document":
@@ -248,19 +262,24 @@ if file_type == "Drive" and link:
                     slides_service = build('slides', 'v1', credentials=creds)
                     text = extract_presentation_text(slides_service, file_id)
                     summary = summarize_node({'file_type': 'Slides', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
-                else:
-                    summary = "This file type is not supported for summarization."
-                summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type}
+                summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type, "path": file_path}
             # File selection UI
             with col1:
-                st.markdown("### Files in Folder")
-                file_names = [f["name"] for f in files]
-                file_ids = [f["id"] for f in files]
-                selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["title"])
+                st.markdown("### Files in Folder (and Subfolders)")
+                if filtered_files:
+                    file_ids = [f["id"] for f in filtered_files]
+                    file_labels = [summaries[x]["path"] for x in file_ids]
+                    selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["path"])
+                else:
+                    st.info("No supported files (Docs, Sheets, Slides) found in this folder or subfolders.")
+                    selected_file_id = None
             with col2:
                 st.markdown("### File Summary")
-                st.markdown(f"**{summaries[selected_file_id]['title']}**")
-                st.write(summaries[selected_file_id]['summary'])
+                if selected_file_id:
+                    st.markdown(f"**{summaries[selected_file_id]['title']}**")
+                    st.write(summaries[selected_file_id]['summary'])
+                else:
+                    st.info("Select a file to see its summary.")
 
 if st.button("Summarize and Email (Agent)"):
     if not link:
