@@ -226,9 +226,41 @@ if file_type == "Drive" and link:
         elif not files:
             st.info("No files found in this folder or you do not have access.")
         else:
-            st.subheader("Files in Drive Folder:")
+            st.markdown("## Google Drive Folder Browser")
+            st.markdown("---")
+            col1, col2 = st.columns([1, 2])
+            # Prepare summaries for all files
+            summaries = {}
             for f in files:
-                st.write(f"- {f['name']} ({f['mimeType']})")
+                file_id = f['id']
+                file_name = f['name']
+                mime_type = f['mimeType']
+                summary = None
+                if mime_type == "application/vnd.google-apps.document":
+                    docs_service = build('docs', 'v1', credentials=creds)
+                    text = extract_doc_text(docs_service, file_id)
+                    summary = summarize_node({'file_type': 'Doc', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+                elif mime_type == "application/vnd.google-apps.spreadsheet":
+                    sheets_service = build('sheets', 'v4', credentials=creds)
+                    text = extract_sheet_text(sheets_service, file_id)
+                    summary = summarize_node({'file_type': 'Sheet', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+                elif mime_type == "application/vnd.google-apps.presentation":
+                    slides_service = build('slides', 'v1', credentials=creds)
+                    text = extract_presentation_text(slides_service, file_id)
+                    summary = summarize_node({'file_type': 'Slides', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+                else:
+                    summary = "This file type is not supported for summarization."
+                summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type}
+            # File selection UI
+            with col1:
+                st.markdown("### Files in Folder")
+                file_names = [f["name"] for f in files]
+                file_ids = [f["id"] for f in files]
+                selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["title"])
+            with col2:
+                st.markdown("### File Summary")
+                st.markdown(f"**{summaries[selected_file_id]['title']}**")
+                st.write(summaries[selected_file_id]['summary'])
 
 if st.button("Summarize and Email (Agent)"):
     if not link:
