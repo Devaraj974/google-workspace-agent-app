@@ -331,59 +331,70 @@ if file_type == "Drive" and link:
                         else:
                             st.error(status)
 
-if st.button("Summarize and Email (Agent)"):
-    if not link:
-        st.error("Please paste a valid Google link.")
-    elif not recipient_email:
-        st.error("Please enter a recipient email address.")
-    elif use_custom_smtp and (not smtp_user or not smtp_password):
-        st.error("Please enter your SMTP username and password.")
-    else:
-        file_id = extract_id_from_link(link)
-        if not file_id:
-            st.error("Could not extract file ID from the link. Please check the link format.")
+# Only show the Summarize and Email (Agent) button for non-Drive file types
+if file_type != "Drive":
+    if st.button("Summarize and Email (Agent)"):
+        if not link:
+            st.error("Please paste a valid Google link.")
+        elif not recipient_email:
+            st.error("Please enter a recipient email address.")
+        elif use_custom_smtp and (not smtp_user or not smtp_password):
+            st.error("Please enter your SMTP username and password.")
         else:
-            # --- LangGraph Agent Workflow ---
-            graph = StateGraph(AgentState)
-            graph.add_node('fetch', fetch_content_node)
-            graph.add_node('summarize', summarize_node)
-            def email_node(state: AgentState):
-                summary = state.get('summary', '')
-                recipient = state.get('recipient_email', '')
-                subject = 'Automated Google Workspace Summary'
-                # Use SMTP credentials from UI or secrets
-                status = send_email_smtp(
-                    subject,
-                    summary,
-                    recipient,
-                    smtp_server,
-                    smtp_port,
-                    smtp_user,
-                    smtp_password
-                )
-                state['email_status'] = status
-                return state
-            graph.add_node('email', email_node)
-            graph.add_edge('fetch', 'summarize')
-            graph.add_edge('summarize', 'email')
-            graph.add_edge('email', END)
-            graph.set_entry_point('fetch')
-            app = graph.compile()
-            st.info("Running agent workflow...")
-            result = app.invoke({
-                "file_type": file_type,
-                "file_id": file_id,
-                "extracted_text": "",
-                "summary": "",
-                "email_status": "",
-                "recipient_email": recipient_email
-            })
-            st.subheader("Summary:")
-            st.write(result.get('summary', ''))
-            if "successfully" in result.get('email_status', '').lower():
-                st.success(result.get('email_status', ''))
+            file_id = extract_id_from_link(link)
+            if not file_id:
+                st.error("Could not extract file ID from the link. Please check the link format.")
             else:
-                st.error(result.get('email_status', ''))
+                actual_file_type = file_type
+                if file_type == "Drive":
+                    creds = get_credentials()
+                    drive_service = build('drive', 'v3', credentials=creds)
+                    detected_type = detect_drive_file_type(drive_service, file_id)
+                    if not detected_type:
+                        st.error("This Drive file is not a supported Google Doc, Sheet, or Slides.")
+                        st.stop()
+                    actual_file_type = detected_type
+                # --- LangGraph Agent Workflow ---
+                graph = StateGraph(AgentState)
+                graph.add_node('fetch', fetch_content_node)
+                graph.add_node('summarize', summarize_node)
+                def email_node(state: AgentState):
+                    summary = state.get('summary', '')
+                    recipient = state.get('recipient_email', '')
+                    subject = 'Automated Google Workspace Summary'
+                    # Use SMTP credentials from UI or secrets
+                    status = send_email_smtp(
+                        subject,
+                        summary,
+                        recipient,
+                        smtp_server,
+                        smtp_port,
+                        smtp_user,
+                        smtp_password
+                    )
+                    state['email_status'] = status
+                    return state
+                graph.add_node('email', email_node)
+                graph.add_edge('fetch', 'summarize')
+                graph.add_edge('summarize', 'email')
+                graph.add_edge('email', END)
+                graph.set_entry_point('fetch')
+                app = graph.compile()
+                st.info("Running agent workflow...")
+                result = app.invoke({
+                    "file_type": actual_file_type,
+                    "file_id": file_id,
+                    "extracted_text": "",
+                    "summary": "",
+                    "email_status": "",
+                    "recipient_email": recipient_email
+                })
+                st.subheader("Summary:")
+                st.write(result.get('summary', ''))
+                if "successfully" in result.get('email_status', '').lower():
+                    st.success(result.get('email_status', ''))
+                else:
+                    st.error(result.get('email_status', ''))
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = "587"
