@@ -305,8 +305,13 @@ if file_type == "Drive" and link:
                 if selected_file_id:
                     st.markdown(f"**{summaries[selected_file_id]['title']}**")
                     st.write(summaries[selected_file_id]['summary'])
-                    # Button to send summary of selected file
-                    if st.button("Send summary of selected file"):
+                else:
+                    st.info("Select a file to see its summary.")
+
+                # Place both buttons at the bottom, side by side
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if selected_file_id and st.button("Send summary of selected file"):
                         subject = f"Summary: {summaries[selected_file_id]['title']}"
                         body = f"Title: {summaries[selected_file_id]['title']}\n\nSummary:\n{summaries[selected_file_id]['summary']}"
                         status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
@@ -314,19 +319,17 @@ if file_type == "Drive" and link:
                             st.success(status)
                         else:
                             st.error(status)
-                else:
-                    st.info("Select a file to see its summary.")
-                # Button to send all summaries (always visible)
-                if summaries and st.button("Send summaries of all files"):
-                    subject = "Summaries of all files in Drive folder"
-                    body = ""
-                    for file_id, info in summaries.items():
-                        body += f"Title: {info['title']}\nSummary:\n{info['summary']}\n\n{'-'*40}\n"
-                    status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
-                    if "successfully" in status.lower():
-                        st.success(status)
-                    else:
-                        st.error(status)
+                with col_btn2:
+                    if summaries and st.button("Send summaries of all files"):
+                        subject = "Summaries of all files in Drive folder"
+                        body = ""
+                        for file_id, info in summaries.items():
+                            body += f"Title: {info['title']}\nSummary:\n{info['summary']}\n\n{'-'*40}\n"
+                        status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
+                        if "successfully" in status.lower():
+                            st.success(status)
+                        else:
+                            st.error(status)
 
 if st.button("Summarize and Email (Agent)"):
     if not link:
