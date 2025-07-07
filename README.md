@@ -1,50 +1,90 @@
-# Google Workspace Automation with CrewAI
+# Google Workspace Agent App
 
-This project automates the process of reading your latest Google Doc and Sheet, summarizing their content, and sending the summary via Gmail using CrewAI and OpenAI's GPT-4o.
+This Streamlit app lets you summarize Google Docs, Sheets, Slides, and PDF files from individual links or entire Google Drive folders (including subfolders). You can view summaries, and email the summary of a selected file or all files in a folder, directly from the app.
+
+**Live App:** [https://app-workspace-agent-app.streamlit.app/](https://app-workspace-agent-app.streamlit.app/)
+
+---
 
 ## Features
-- Authenticates with Google Workspace (Drive, Sheets, Gmail)
-- Finds the most recent Google Doc and Google Sheet
-- Reads and summarizes their content using GPT-4o
-- Sends the summary to a target email via Gmail
+- Authenticate with Google Workspace (Drive, Docs, Sheets, Slides, Gmail)
+- Summarize:
+  - Individual Google Docs, Sheets, Slides, or PDF files by link
+  - All supported files in a Google Drive folder (recursively, including subfolders)
+- Professional UI: two-column layout for Drive folders (file list on left, summary on right)
+- Instantly view summaries for all files in a folder
+- Email the summary of the selected file or all files in a folder to any recipient
+- Supports custom SMTP credentials or uses Streamlit secrets
+
+---
+
+## Supported File Types
+- Google Docs
+- Google Sheets
+- Google Slides
+- PDF files (text-based only; scanned/image PDFs are not supported for text extraction)
+
+---
 
 ## Setup Instructions
 
-### 1. Google Cloud Project & OAuth Credentials
+### 1. Google Cloud Project & Service Account
 - Go to the [Google Cloud Console](https://console.cloud.google.com/)
 - Create a new project
-- Enable the **Google Drive API**, **Gmail API**, and **Google Sheets API**
+- Enable the **Google Drive API**, **Gmail API**, **Google Sheets API**, **Google Docs API**, and **Google Slides API**
 - Go to **APIs & Services > Credentials**
-- Click **Create Credentials** > **OAuth client ID**
-- Choose **Desktop app**
-- Download the credentials JSON and rename it to `credentials.json`
-- Place `credentials.json` in the project directory
+- Click **Create Credentials** > **Service account**
+- Download the service account JSON and keep it safe
+- Share any Google Docs/Sheets/Slides/PDFs or Drive folders you want to summarize with the service account email
 
-### 2. Environment Variables
-- Copy `.env.example` to `.env`
-- Fill in your OpenAI API key and the target email address
+### 2. Environment Variables / Secrets
+- For local use: create a `.env` file or use `.streamlit/secrets.toml` with:
+  - `GEMINI_API_KEY` (for Gemini summarization)
+  - `GOOGLE_CREDENTIALS` (the service account JSON as a string)
+  - `TARGET_EMAIL` (default recipient email)
+  - SMTP credentials (optional, for custom email sending)
+- For Streamlit Cloud: set these in the app's **Secrets** section
 
 ### 3. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Run the Script
+### 4. Run the App Locally
 ```bash
-python google_workspace_automation.py
+streamlit run google_workspace_automation.py
 ```
-- On first run, a browser window will open for Google authentication.
-- Grant access to the requested scopes.
-- A `token.pickle` file will be created for future runs.
 
-## Notes
-- The script uses CrewAI agents for modular, explainable automation.
-- You need access to the Google account with the Docs/Sheets you want to process.
-- The summary is sent to the email specified in your `.env` file.
+---
 
-## Troubleshooting
-- Ensure `credentials.json` is present in the project directory.
-- If you change Google account or permissions, delete `token.pickle` and re-run the script.
+## Usage
+- Select the file type (Doc, Sheet, Slides, PDF, or Drive)
+- Paste the shareable link (for Drive, use a folder link)
+- For Drive folders, browse and select files in the left pane; summaries appear on the right
+- Use the buttons to email the summary of the selected file or all files
+
+---
+
+## Emailing Summaries
+- You can email the summary of the currently selected file
+- Or email summaries of all files in a Drive folder (batch)
+- Uses Gmail SMTP (default) or your custom SMTP credentials
+
+---
+
+## Deployment
+- Deploy on [Streamlit Cloud](https://streamlit.io/cloud)
+- Set all required secrets in the app's **Secrets** section
+- App link: [https://app-workspace-agent-app.streamlit.app/](https://app-workspace-agent-app.streamlit.app/)
+
+---
+
+## Limitations
+- PDF summarization works only for text-based PDFs (no OCR for scanned/image PDFs)
+- Service account must have access to all files/folders you want to summarize
+- Summaries are generated using Gemini API
+
+---
 
 ## License
 MIT 
