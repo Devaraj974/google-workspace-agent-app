@@ -6,3 +6,6 @@ google-generativeai
 langgraph
 python-dotenv
 PyPDF2 
+python-docx
+openpyxl
+python-pptx 

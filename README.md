@@ -88,3 +88,9 @@ streamlit run google_workspace_automation.py
 
 ## License
 MIT 
+
+---
+
+### If you encounter any errors (e.g., missing packages, extraction issues), let me know and I’ll help you debug further!
+
+**Try it out and let me know if you can now summarize all your files, including Office docs and slides!** 

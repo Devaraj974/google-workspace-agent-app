@@ -16,6 +16,9 @@ import re
 import io
 from googleapiclient.http import MediaIoBaseDownload
 import PyPDF2
+import docx
+import openpyxl
+from pptx import Presentation
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
@@ -135,6 +138,60 @@ def extract_pdf_text(drive_service, file_id):
     except Exception as e:
         return f"Error reading PDF: {e}"
 
+# Extraction functions for Office files
+
+def extract_docx_text(drive_service, file_id):
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        doc = docx.Document(fh)
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text
+    except Exception as e:
+        return f"Error reading DOCX: {e}"
+
+def extract_xlsx_text(drive_service, file_id):
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        wb = openpyxl.load_workbook(fh, data_only=True)
+        text = ""
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows(values_only=True):
+                text += "\t".join([str(cell) if cell is not None else '' for cell in row]) + "\n"
+        return text
+    except Exception as e:
+        return f"Error reading XLSX: {e}"
+
+def extract_pptx_text(drive_service, file_id):
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        prs = Presentation(fh)
+        text = ""
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text += shape.text + "\n"
+        return text
+    except Exception as e:
+        return f"Error reading PPTX: {e}"
+
 # --- LangGraph State Schema ---
 class AgentState(TypedDict):
     file_type: str
@@ -162,6 +219,15 @@ def fetch_content_node(state: AgentState):
     elif file_type == "PDF":
         drive_service = build('drive', 'v3', credentials=creds)
         text = extract_pdf_text(drive_service, file_id)
+    elif file_type == "DOCX":
+        drive_service = build('drive', 'v3', credentials=creds)
+        text = extract_docx_text(drive_service, file_id)
+    elif file_type == "XLSX":
+        drive_service = build('drive', 'v3', credentials=creds)
+        text = extract_xlsx_text(drive_service, file_id)
+    elif file_type == "PPTX":
+        drive_service = build('drive', 'v3', credentials=creds)
+        text = extract_pptx_text(drive_service, file_id)
     state['extracted_text'] = text
     return state
 
@@ -194,7 +260,7 @@ def send_email_smtp(subject, body, to_email, smtp_server, smtp_port, smtp_user, 
         return f"Error sending email: {e}"
 
 # --- Streamlit UI ---
-file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive", "PDF"])
+file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive", "PDF", "DOCX", "XLSX", "PPTX"])
 link = st.text_input(f"Paste the Google {file_type} link here:")
 recipient_email = st.text_input("Enter the recipient email address:")
 
@@ -252,91 +318,92 @@ if file_type == "Drive" and link:
         creds = get_credentials()
         drive_service = build('drive', 'v3', credentials=creds)
         files = list_drive_files_recursive(drive_service, folder_id)
-        # Show all files for debugging
-        if not files:
-            st.info("No files found in this folder or you do not have access.")
-        else:
-            st.markdown("## Google Drive Folder Browser (Recursive)")
-            st.markdown("---")
-            col1, col2 = st.columns([1, 2])
-            # Supported types for summarization
-            supported_types = [
-                "application/vnd.google-apps.document",
-                "application/vnd.google-apps.spreadsheet",
-                "application/vnd.google-apps.presentation",
-                "application/pdf"
-            ]
-            # Prepare summaries for supported files only
-            summaries = {}
-            filtered_files = [f for f in files if f["mimeType"] in supported_types]
-            # --- NEW: Show all files, not just supported ---
-            with col1:
-                st.markdown("### Files in Folder (and Subfolders)")
-                for f in files:
-                    file_id = f["id"]
-                    file_name = f["name"]
-                    file_path = f["path"]
-                    mime_type = f["mimeType"]
-                    is_supported = mime_type in supported_types
-                    st.write(f"{file_path} | Type: {mime_type} {'(Supported)' if is_supported else '(Not Supported)'}")
-            # --- END NEW ---
-            # Prepare summaries for supported files
-            for f in filtered_files:
-                file_id = f['id']
-                file_name = f['name']
-                file_path = f['path']
-                mime_type = f['mimeType']
-                summary = None
-                if mime_type == "application/vnd.google-apps.document":
-                    docs_service = build('docs', 'v1', credentials=creds)
-                    text = extract_doc_text(docs_service, file_id)
-                    summary = summarize_node({'file_type': 'Doc', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
-                elif mime_type == "application/vnd.google-apps.spreadsheet":
-                    sheets_service = build('sheets', 'v4', credentials=creds)
-                    text = extract_sheet_text(sheets_service, file_id)
-                    summary = summarize_node({'file_type': 'Sheet', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
-                elif mime_type == "application/vnd.google-apps.presentation":
-                    slides_service = build('slides', 'v1', credentials=creds)
-                    text = extract_presentation_text(slides_service, file_id)
-                    summary = summarize_node({'file_type': 'Slides', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
-                elif mime_type == "application/pdf":
-                    text = extract_pdf_text(drive_service, file_id)
-                    summary = summarize_node({'file_type': 'PDF', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
-                summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type, "path": file_path}
-            # File selection UI for supported files only
-            with col2:
-                st.markdown("### File Summary")
-                if filtered_files:
-                    file_ids = [f["id"] for f in filtered_files]
-                    file_labels = [summaries[x]["path"] for x in file_ids]
-                    selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["path"])
-                    st.markdown(f"**{summaries[selected_file_id]['title']}**")
-                    st.write(summaries[selected_file_id]['summary'])
-                else:
-                    st.info("No supported files (Docs, Sheets, Slides, PDF) found in this folder or subfolders.")
-                    selected_file_id = None
-                # Place both buttons at the bottom, side by side
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if selected_file_id and st.button("Send summary of selected file"):
-                        subject = f"Summary: {summaries[selected_file_id]['title']}"
-                        body = f"Title: {summaries[selected_file_id]['title']}\n\nSummary:\n{summaries[selected_file_id]['summary']}"
-                        status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
-                        if "successfully" in status.lower():
-                            st.success(status)
-                        else:
-                            st.error(status)
-                with col_btn2:
-                    if summaries and st.button("Send summaries of all files"):
-                        subject = "Summaries of all files in Drive folder"
-                        body = ""
-                        for file_id, info in summaries.items():
-                            body += f"Title: {info['title']}\nSummary:\n{info['summary']}\n\n{'-'*40}\n"
-                        status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
-                        if "successfully" in status.lower():
-                            st.success(status)
-                        else:
-                            st.error(status)
+        # Supported types for summarization (add Office types)
+        supported_types = [
+            "application/vnd.google-apps.document",
+            "application/vnd.google-apps.spreadsheet",
+            "application/vnd.google-apps.presentation",
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        ]
+        summaries = {}
+        filtered_files = [f for f in files if f["mimeType"] in supported_types]
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("### Files in Folder (and Subfolders)")
+            for f in files:
+                file_id = f["id"]
+                file_name = f["name"]
+                file_path = f["path"]
+                mime_type = f["mimeType"]
+                is_supported = mime_type in supported_types
+                st.write(f"{file_path} | Type: {mime_type} {'(Supported)' if is_supported else '(Not Supported)'}")
+        # Prepare summaries for supported files
+        for f in filtered_files:
+            file_id = f['id']
+            file_name = f['name']
+            file_path = f['path']
+            mime_type = f['mimeType']
+            summary = None
+            if mime_type == "application/vnd.google-apps.document":
+                docs_service = build('docs', 'v1', credentials=creds)
+                text = extract_doc_text(docs_service, file_id)
+                summary = summarize_node({'file_type': 'Doc', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "application/vnd.google-apps.spreadsheet":
+                sheets_service = build('sheets', 'v4', credentials=creds)
+                text = extract_sheet_text(sheets_service, file_id)
+                summary = summarize_node({'file_type': 'Sheet', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "application/vnd.google-apps.presentation":
+                slides_service = build('slides', 'v1', credentials=creds)
+                text = extract_presentation_text(slides_service, file_id)
+                summary = summarize_node({'file_type': 'Slides', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "application/pdf":
+                text = extract_pdf_text(drive_service, file_id)
+                summary = summarize_node({'file_type': 'PDF', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                text = extract_docx_text(drive_service, file_id)
+                summary = summarize_node({'file_type': 'DOCX', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+                text = extract_xlsx_text(drive_service, file_id)
+                summary = summarize_node({'file_type': 'XLSX', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+                text = extract_pptx_text(drive_service, file_id)
+                summary = summarize_node({'file_type': 'PPTX', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type, "path": file_path}
+        with col2:
+            st.markdown("### File Summary")
+            if filtered_files:
+                file_ids = [f["id"] for f in filtered_files]
+                file_labels = [summaries[x]["path"] for x in file_ids]
+                selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["path"])
+                st.markdown(f"**{summaries[selected_file_id]['title']}**")
+                st.write(summaries[selected_file_id]['summary'])
+            else:
+                st.info("No supported files (Docs, Sheets, Slides, PDF, DOCX, XLSX, PPTX) found in this folder or subfolders.")
+                selected_file_id = None
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if selected_file_id and st.button("Send summary of selected file"):
+                    subject = f"Summary: {summaries[selected_file_id]['title']}"
+                    body = f"Title: {summaries[selected_file_id]['title']}\n\nSummary:\n{summaries[selected_file_id]['summary']}"
+                    status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
+                    if "successfully" in status.lower():
+                        st.success(status)
+                    else:
+                        st.error(status)
+            with col_btn2:
+                if summaries and st.button("Send summaries of all files"):
+                    subject = "Summaries of all files in Drive folder"
+                    body = ""
+                    for file_id, info in summaries.items():
+                        body += f"Title: {info['title']}\nSummary:\n{info['summary']}\n\n{'-'*40}\n"
+                    status = send_email_smtp(subject, body, recipient_email, smtp_server, smtp_port, smtp_user, smtp_password)
+                    if "successfully" in status.lower():
+                        st.success(status)
+                    else:
+                        st.error(status)
 
 # Only show the Summarize and Email (Agent) button for non-Drive file types
 if file_type != "Drive":
