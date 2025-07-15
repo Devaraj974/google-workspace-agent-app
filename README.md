@@ -9,7 +9,7 @@ This Streamlit app lets you summarize Google Docs, Sheets, Slides, and PDF files
 ## Features
 - Authenticate with Google Workspace (Drive, Docs, Sheets, Slides, Gmail)
 - Summarize:
-  - Individual Google Docs, Sheets, Slides, or PDF files by link
+  - Individual Google Doc, Sheet, Drive, PDF, DOCX, XLSX, PPTX, or CSV files by link
   - All supported files in a Google Drive folder (recursively, including subfolders)
 - Professional UI: two-column layout for Drive folders (file list on left, summary on right)
 - Instantly view summaries for all files in a folder
@@ -22,6 +22,11 @@ This Streamlit app lets you summarize Google Docs, Sheets, Slides, and PDF files
 - Google Docs
 - Google Sheets
 - Google Slides
+- Google Drive, 
+- Google DOCX,
+- Google XLSX,
+- Google PPTX,
+- Google CSV
 - PDF files (text-based only; scanned/image PDFs are not supported for text extraction)
 
 ---

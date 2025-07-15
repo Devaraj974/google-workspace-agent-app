@@ -25,13 +25,13 @@ import csv
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
 st.title("Google Workspace Agent App")
 st.markdown("""
-Summarize a Google Doc, Sheet, or Slides and email the summary using an agent-based workflow!\
+Summarize a Google Doc, Sheet, Drive, PDF, DOCX, XLSX, PPTX, or CSV and email the summary using an agent-based workflow!\
 **Your data is processed securely.**
 """)
 
 st.info("""
 **Instructions:**
-1. Select the Google file type (Doc, Sheet, or Slides).
+1. Select the Google file type (Doc, Sheet, Drive, PDF, DOCX, XLSX, PPTX, or CSV).
 2. Paste the shareable link (ensure the file is accessible to the app's Google account).
 3. Click 'Summarize and Email (Agent)'.
 """)
