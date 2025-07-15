@@ -19,6 +19,7 @@ import PyPDF2
 import docx
 import openpyxl
 from pptx import Presentation
+import csv
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Google Workspace Agent App", page_icon="🤖")
@@ -192,6 +193,25 @@ def extract_pptx_text(drive_service, file_id):
     except Exception as e:
         return f"Error reading PPTX: {e}"
 
+def extract_csv_text(drive_service, file_id):
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        text = ""
+        fh.seek(0)
+        decoded = fh.read().decode('utf-8', errors='replace').splitlines()
+        reader = csv.reader(decoded)
+        for row in reader:
+            text += ", ".join(row) + "\n"
+        return text
+    except Exception as e:
+        return f"Error reading CSV: {e}"
+
 # --- LangGraph State Schema ---
 class AgentState(TypedDict):
     file_type: str
@@ -228,6 +248,9 @@ def fetch_content_node(state: AgentState):
     elif file_type == "PPTX":
         drive_service = build('drive', 'v3', credentials=creds)
         text = extract_pptx_text(drive_service, file_id)
+    elif file_type == "CSV":
+        drive_service = build('drive', 'v3', credentials=creds)
+        text = extract_csv_text(drive_service, file_id)
     state['extracted_text'] = text
     return state
 
@@ -260,7 +283,7 @@ def send_email_smtp(subject, body, to_email, smtp_server, smtp_port, smtp_user, 
         return f"Error sending email: {e}"
 
 # --- Streamlit UI ---
-file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive", "PDF", "DOCX", "XLSX", "PPTX"])
+file_type = st.selectbox("Select the file type to summarize or list:", ["Doc", "Sheet", "Slides", "Drive", "PDF", "DOCX", "XLSX", "PPTX", "CSV"])
 link = st.text_input(f"Paste the Google {file_type} link here:")
 recipient_email = st.text_input("Enter the recipient email address:")
 
@@ -326,7 +349,8 @@ if file_type == "Drive" and link:
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/csv"
         ]
         summaries = {}
         filtered_files = [f for f in files if f["mimeType"] in supported_types]
@@ -371,6 +395,9 @@ if file_type == "Drive" and link:
             elif mime_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
                 text = extract_pptx_text(drive_service, file_id)
                 summary = summarize_node({'file_type': 'PPTX', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
+            elif mime_type == "text/csv":
+                text = extract_csv_text(drive_service, file_id)
+                summary = summarize_node({'file_type': 'CSV', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
             summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type, "path": file_path}
         with col2:
             st.markdown("### File Summary")
@@ -381,7 +408,7 @@ if file_type == "Drive" and link:
                 st.markdown(f"**{summaries[selected_file_id]['title']}**")
                 st.write(summaries[selected_file_id]['summary'])
             else:
-                st.info("No supported files (Docs, Sheets, Slides, PDF, DOCX, XLSX, PPTX) found in this folder or subfolders.")
+                st.info("No supported files (Docs, Sheets, Slides, PDF, DOCX, XLSX, PPTX, CSV) found in this folder or subfolders.")
                 selected_file_id = None
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
