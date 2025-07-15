@@ -252,22 +252,35 @@ if file_type == "Drive" and link:
         creds = get_credentials()
         drive_service = build('drive', 'v3', credentials=creds)
         files = list_drive_files_recursive(drive_service, folder_id)
-        # Only keep supported types for summarization
-        supported_types = [
-            "application/vnd.google-apps.document",
-            "application/vnd.google-apps.spreadsheet",
-            "application/vnd.google-apps.presentation",
-            "application/pdf"
-        ]
+        # Show all files for debugging
         if not files:
             st.info("No files found in this folder or you do not have access.")
         else:
             st.markdown("## Google Drive Folder Browser (Recursive)")
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
-            # Prepare summaries for all supported files
+            # Supported types for summarization
+            supported_types = [
+                "application/vnd.google-apps.document",
+                "application/vnd.google-apps.spreadsheet",
+                "application/vnd.google-apps.presentation",
+                "application/pdf"
+            ]
+            # Prepare summaries for supported files only
             summaries = {}
             filtered_files = [f for f in files if f["mimeType"] in supported_types]
+            # --- NEW: Show all files, not just supported ---
+            with col1:
+                st.markdown("### Files in Folder (and Subfolders)")
+                for f in files:
+                    file_id = f["id"]
+                    file_name = f["name"]
+                    file_path = f["path"]
+                    mime_type = f["mimeType"]
+                    is_supported = mime_type in supported_types
+                    st.write(f"{file_path} | Type: {mime_type} {'(Supported)' if is_supported else '(Not Supported)'}")
+            # --- END NEW ---
+            # Prepare summaries for supported files
             for f in filtered_files:
                 file_id = f['id']
                 file_name = f['name']
@@ -290,24 +303,18 @@ if file_type == "Drive" and link:
                     text = extract_pdf_text(drive_service, file_id)
                     summary = summarize_node({'file_type': 'PDF', 'extracted_text': text, 'file_id': file_id, 'summary': '', 'email_status': '', 'recipient_email': ''})['summary']
                 summaries[file_id] = {"title": file_name, "summary": summary, "mime_type": mime_type, "path": file_path}
-            # File selection UI
-            with col1:
-                st.markdown("### Files in Folder (and Subfolders)")
+            # File selection UI for supported files only
+            with col2:
+                st.markdown("### File Summary")
                 if filtered_files:
                     file_ids = [f["id"] for f in filtered_files]
                     file_labels = [summaries[x]["path"] for x in file_ids]
                     selected_file_id = st.radio("Select a file to view summary:", file_ids, format_func=lambda x: summaries[x]["path"])
-                else:
-                    st.info("No supported files (Docs, Sheets, Slides, PDF) found in this folder or subfolders.")
-                    selected_file_id = None
-            with col2:
-                st.markdown("### File Summary")
-                if selected_file_id:
                     st.markdown(f"**{summaries[selected_file_id]['title']}**")
                     st.write(summaries[selected_file_id]['summary'])
                 else:
-                    st.info("Select a file to see its summary.")
-
+                    st.info("No supported files (Docs, Sheets, Slides, PDF) found in this folder or subfolders.")
+                    selected_file_id = None
                 # Place both buttons at the bottom, side by side
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
