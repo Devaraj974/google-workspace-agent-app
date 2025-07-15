@@ -258,7 +258,21 @@ def summarize_node(state: AgentState):
     genai.configure(api_key=GEMINI_API_KEY)
     text = state.get('extracted_text', '')
     file_type = state.get('file_type', '')
-    prompt = f"Summarize the following Google {file_type} content:\n\n{text}\n\nSummary:"
+    # Limit the amount of data sent to Gemini
+    max_chars = 4000
+    if len(text) > max_chars:
+        text = text[:max_chars] + '\n... [truncated]'
+    # Tailored prompt for each file type
+    if file_type in ["Doc", "DOCX"]:
+        prompt = f"Summarize the following document. Focus on the main points, key takeaways, and any action items.\n\nDocument Content:\n{text}\n\nSummary:"
+    elif file_type in ["Sheet", "XLSX", "CSV"]:
+        prompt = f"The following is tabular data. Provide a summary of the key columns, trends, and any notable data points.\n\nTable Content:\n{text}\n\nSummary:"
+    elif file_type in ["Slides", "PPTX"]:
+        prompt = f"Summarize the following presentation. Highlight the main topics covered in the slides.\n\nPresentation Content:\n{text}\n\nSummary:"
+    elif file_type == "PDF":
+        prompt = f"Summarize the following PDF document. Focus on the main ideas and important details.\n\nPDF Content:\n{text}\n\nSummary:"
+    else:
+        prompt = f"Summarize the following content:\n\n{text}\n\nSummary:"
     try:
         model = genai.GenerativeModel('models/gemini-1.5-pro-latest')
         response = model.generate_content(prompt)
